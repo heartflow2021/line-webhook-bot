@@ -10,23 +10,43 @@ from linebot.exceptions import InvalidSignatureError
 app = Flask(__name__)
 
 # 設定 LINE API
-LINE_CHANNEL_ACCESS_TOKEN = "你的_LINE_ACCESS_TOKEN"
-LINE_CHANNEL_SECRET = "你的_LINE_SECRET"
+LINE_CHANNEL_ACCESS_TOKEN = "7oFRJSVbyKYnP3i2AxSrKUTgBmrdxEIr5pvEfPwueSlhevuCZmsSb3x3JeaXQmqxcq7NQ47oynEy/NmM6VTkcKim6aX3vqJtNcFye4MFR93SUV2lM+gPF6QllzyQ4QJcVqVfvS7T8r5oJny0KNdjWQdB04t89/1O/w1cDnyilFU="
+LINE_CHANNEL_SECRET = "5aa6642a8ee7d823099df583015eeeef"
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # 設定 OpenAI API
-openai.api_key = "你的_OPENAI_API_KEY"
+import os
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    raise ValueError("環境變數 OPENAI_API_KEY 未設定！請在 Zeabur 設定 API Key。")
+
 
 # 連接 Google Sheets（可選）
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("你的_Google_API_憑證.json", scope)
+
+# ✅ 改為從 Zeabur 環境變數讀取 API Key
+import os
+import json
+
+# 從 Zeabur 環境變數讀取 Google API Key
+google_credentials_json = os.getenv("GOOGLE_API_KEY")
+if not google_credentials_json:
+    raise ValueError("GOOGLE_API_KEY 環境變數未設定")
+
+creds_dict = json.loads(google_credentials_json)
+
+# 連接 Google Sheets
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 sheet = client.open("Chatbot Conversations").sheet1
 
+
 # 記錄對話到 Google Sheets（可選）
-def save_to_sheets(user_id, user_message, bot_reply):
-    sheet.append_row([user_id, user_message, bot_reply])
+def save_to_sheets(user_id, user_message, bot_reply,Timestamp):
+    sheet.append_row([user_id, user_message, bot_reply,Timestamp])
 
 # 設定 Webhook
 @app.route("/callback", methods=["POST"])
