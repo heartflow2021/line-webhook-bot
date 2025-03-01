@@ -10,10 +10,16 @@ from linebot.exceptions import InvalidSignatureError
 app = Flask(__name__)
 
 # 設定 LINE API
-LINE_CHANNEL_ACCESS_TOKEN = "7oFRJSVbyKYnP3i2AxSrKUTgBmrdxEIr5pvEfPwueSlhevuCZmsSb3x3JeaXQmqxcq7NQ47oynEy/NmM6VTkcKim6aX3vqJtNcFye4MFR93SUV2lM+gPF6QllzyQ4QJcVqVfvS7T8r5oJny0KNdjWQdB04t89/1O/w1cDnyilFU="
-LINE_CHANNEL_SECRET = "5aa6642a8ee7d823099df583015eeeef"
+import os
+from linebot import LineBotApi, WebhookHandler
+
+# 改為從環境變數讀取
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
 
 # 設定 OpenAI API
 import os
