@@ -51,8 +51,8 @@ sheet = client.open("Chatbot Conversations").sheet1
 
 
 # 記錄對話到 Google Sheets（可選）
-def save_to_sheets(user_id, user_message, bot_reply,Timestamp):
-    sheet.append_row([user_id, user_message, bot_reply,Timestamp])
+def save_to_sheets(user_id, user_message, bot_reply,time_stamp):
+    sheet.append_row([user_id, user_message, bot_reply,time_stamp])
 
 # 設定 Webhook
 @app.route("/callback", methods=["POST"])
