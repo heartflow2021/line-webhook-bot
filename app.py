@@ -1,3 +1,9 @@
+import logging
+
+# 設定 log 等級與格式
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s [%(levelname)s] %(message)s")
+
 from flask import Flask, request, jsonify
 import requests
 import openai
@@ -76,32 +82,44 @@ def handle_message(event):
     user_message = event.message.text
     user_id = event.source.user_id
 
-    # 發送訊息到 ChatGPT API
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {
-                "role": "system",
-                "content": """你是一個專業且溫暖的心理健康輔導助手，主要針對情緒困擾的用戶（包括焦慮、憂鬱、感情問題、婚姻問題及家庭衝突等），
-                提供情緒管理策略、啟發性問題及自我反思引導，幫助用戶處理心理問題和釐清情緒來源。
-                它會像朋友一樣，用輕鬆、簡單的語氣交流，讓用戶感覺到被理解和支持。
-                當用戶表達情緒問題時，內在安全感教練不會馬上提供解決方法，而是先照顧對方的情緒，更多使用一問一答的形式來互動，
-                讓對方能慢慢理解，感受被陪伴。對話應以短句為主，避免訊息量過大，確保每次互動都可以專注於一個核心話題，逐步深入。
-                你會透過簡單的開放性提問，鼓勵用戶自由表達感受，並且強調陪伴與傾聽的重要性。
-                若發現用戶情緒波動較大，則會溫柔地建議尋求專業的心理協助，並強調安全感與支持的重要性。"""
-            },
-            {"role": "user", "content": user_message}
-        ]
-    )
-
-    bot_reply = response["choices"][0]["message"]["content"]
+    # 呼叫 OpenAI API
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """你是一個專業且溫暖的心理健康輔導助手，
+                    主要針對情緒困擾的用戶（包括焦慮、憂鬱、感情問題、婚姻問題及家庭衝突等），
+                    提供情緒管理策略、啟發性問題及自我反思引導，幫助用戶處理心理問題和釐清情緒來源。
+                    它會像朋友一樣，用輕鬆、簡單的語氣交流，讓用戶感覺到被理解和支持。
+                    當用戶表達情緒問題時，內在安全感教練不會馬上提供解決方法，而是先照顧對方的情緒，
+                    更多使用一問一答的形式來互動，讓對方能慢慢理解，感受被陪伴。
+                    對話應以短句為主，避免訊息量過大，確保每次互動都可以專注於一個核心話題，逐步深入。
+                    你會透過簡單的開放性提問，鼓勵用戶自由表達感受，並且強調陪伴與傾聽的重要性。
+                    若發現用戶情緒波動較大，則會溫柔地建議尋求專業的心理協助，並強調安全感與支持的重要性。"""
+                },
+                {"role": "user", "content": user_message}
+            ]
+        )
+        bot_reply = response["choices"][0]["message"]["content"]
+    except Exception as e:
+        logging.error(f"Error calling OpenAI API: {e}")
+        bot_reply = "很抱歉，目前無法處理您的請求，請稍後再試。"
 
     # 回應使用者
-    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=bot_reply))
+    try:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=bot_reply))
+    except Exception as e:
+        logging.error(f"Error replying to LINE message: {e}")
 
-    # 儲存對話到 Google Sheets（將時間戳記也傳入）
-    from datetime import datetime
-    save_to_sheets(user_id, user_message, bot_reply, datetime.now().isoformat())
+    # 儲存對話到 Google Sheets
+    try:
+        from datetime import datetime
+        save_to_sheets(user_id, user_message, bot_reply, datetime.now().isoformat())
+    except Exception as e:
+        logging.error(f"Error saving conversation to Google Sheets: {e}")
+
 
 
 if __name__ == "__main__":
