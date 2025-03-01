@@ -1,0 +1,6 @@
+flask
+requests
+openai
+gspread
+oauth2client
+line-bot-sdk
