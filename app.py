@@ -78,7 +78,7 @@ def handle_message(event):
 
     # 發送訊息到 ChatGPT API
     response = openai.ChatCompletion.create(
-        model="gpt-4o",
+        model="gpt-4",
         messages=[
         {
     "role": "system",
@@ -90,7 +90,7 @@ def handle_message(event):
     你會透過簡單的開放性提問，鼓勵用戶自由表達感受，並且強調陪伴與傾聽的重要性。
     若發現用戶情緒波動較大，則會溫柔地建議尋求專業的心理協助，並強調安全感與支持的重要性。"""
 },
-        {"role": "user", "content": "你好，請介紹一下自己！"}
+        {"role": "user", "content": user_message }
         ]
     )
 
@@ -100,7 +100,8 @@ def handle_message(event):
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=bot_reply))
 
     # 儲存對話（可選）
-    save_to_sheets(user_id, user_message, bot_reply)
+    from datetime import datetime
+save_to_sheets(user_id, user_message, bot_reply, datetime.now().isoformat())
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3000)
