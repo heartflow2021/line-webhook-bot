@@ -1,6 +1,6 @@
 flask
 requests
-openai>=1.0.0
+openai>=0.27.0
 gspread
 oauth2client
 line-bot-sdk
