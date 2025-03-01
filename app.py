@@ -54,6 +54,9 @@ def callback():
     body = request.get_data(as_text=True)
     signature = request.headers.get("X-Line-Signature")
 
+    if signature is None:
+        return "Missing signature", 400  # 直接回應錯誤，避免 `NoneType` 問題
+
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
