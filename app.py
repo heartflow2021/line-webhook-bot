@@ -32,14 +32,14 @@ def save_to_sheets(user_id, user_message, bot_reply):
 @app.route("/callback", methods=["POST"])
 def callback():
     body = request.get_data(as_text=True)
-    signature = request.headers["X-Line-Signature"]
+    signature = request.headers.get("X-Line-Signature")
 
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         return "Invalid signature", 400
 
-    return "OK"
+    return "OK", 200
 
 # 處理使用者訊息
 @handler.add(MessageEvent, message=TextMessage)
