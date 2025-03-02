@@ -42,10 +42,13 @@ client = gspread.authorize(creds)
 # 建立 Google Drive API 服務物件
 drive_service = build('drive', 'v3', credentials=creds)
 
-# 請將下方 TARGET_FOLDER_ID 替換成你目標資料夾的 ID
-TARGET_FOLDER_ID = "1SswDib0s4h4LFpdcpYLDzYSiYhzxg4BV"  # 例如："1AbcDEFghIJklMNoPQRstuVWXyz"
+# 目標資料夾 ID (請自行設定)
+TARGET_FOLDER_ID = "1SswDib0s4h4LFpdcpYLDzYSiYhzxg4BV"  # 替換成你的目標資料夾 ID
 
-# 取得或建立以用戶 ID 命名的 Spreadsheet，並將檔案移到目標資料夾
+# 以防重複處理的簡單記錄（注意：此 in-memory 機制僅適用於單一實例）
+processed_event_ids = set()
+
+# 取得或建立以用戶 ID 命名的 Spreadsheet，並移到目標資料夾
 def get_or_create_user_sheet(user_id):
     try:
         sh = client.open(user_id)
@@ -57,7 +60,7 @@ def get_or_create_user_sheet(user_id):
             worksheet = sh.sheet1
             worksheet.append_row(["User Message", "Bot Reply", "Timestamp"])
             logging.info(f"Created new spreadsheet for user {user_id}.")
-            # 將該檔案共用給你的 Google 帳戶 (請替換成你的 Gmail 地址)
+            # 將該檔案共用給你的 Google 帳戶 (請替換成你的 Gmail)
             sh.share('heartflow2021@gmail.com', perm_type='user', role='writer')
             # 移動檔案到指定資料夾
             file_id = sh.id
@@ -97,17 +100,23 @@ def callback():
         handler.handle(body, signature)
     except InvalidSignatureError:
         return "Invalid signature", 400
-    # 確保能快速回傳 OK 給 LINE
+    # 立即回傳 OK 給 LINE，避免重試
     return "OK", 200
 
 # 處理使用者訊息
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
+    event_id = event.reply_token  # 假設 reply_token 可視為事件的唯一標識（注意：這僅適用於測試環境）
+    if event_id in processed_event_ids:
+        logging.info(f"Event {event_id} already processed, skipping.")
+        return
+    processed_event_ids.add(event_id)
+    
     user_message = event.message.text
     user_id = event.source.user_id
     logging.info(f"Received message from user {user_id}: {user_message}")
 
-    # 呼叫 OpenAI API（同步處理）
+    # 呼叫 OpenAI API
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -137,7 +146,7 @@ def handle_message(event):
         logging.error(f"Error calling OpenAI API: {e}")
         bot_reply = "很抱歉，目前無法處理您的請求，請稍後再試。"
 
-    # 用 push_message 回覆使用者（避免使用 reply token）
+    # 用 push_message 回覆使用者
     try:
         line_bot_api.push_message(user_id, TextSendMessage(text=bot_reply))
     except Exception as e:
