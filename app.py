@@ -10,7 +10,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from linebot import LineBotApi, WebhookHandler
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-from linebot.exceptions import InvalidSignatureError
+from linebot.exceptions import InvalidSignatureError, LineBotApiError
 
 # 設定 log 等級與格式
 logging.basicConfig(level=logging.INFO,
@@ -21,7 +21,6 @@ app = Flask(__name__)
 # 設定 LINE API
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
-
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
@@ -30,49 +29,59 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 if not openai.api_key:
     raise ValueError("環境變數 OPENAI_API_KEY 未設定！請在 Zeabur 設定 API Key。")
 
-# 連接 Google Sheets（使用 OAuth2 憑證）
+# 連接 Google Sheets（使用 Service Account）
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 google_credentials_json = os.getenv("GOOGLE_API_KEY")
 if not google_credentials_json:
     raise ValueError("GOOGLE_API_KEY 環境變數未設定")
-
 creds_dict = json.loads(google_credentials_json)
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
-# 定義一個函式，用來取得或建立以用戶 ID 命名的 Spreadsheet
+# 取得或建立以用戶 ID 命名的 Spreadsheet
 def get_or_create_user_sheet(user_id):
     try:
-        # 嘗試開啟已存在的 Spreadsheet
         sh = client.open(user_id)
         worksheet = sh.sheet1
+        logging.info(f"Found existing spreadsheet for user {user_id}.")
     except gspread.exceptions.SpreadsheetNotFound:
-        # 若不存在，則建立一個新的 Spreadsheet，並加上表頭
-        sh = client.create(user_id)
-        worksheet = sh.sheet1
-        # 加入表頭，方便後續辨識欄位
-        worksheet.append_row(["User Message", "Bot Reply", "Timestamp"])
+        try:
+            sh = client.create(user_id)
+            worksheet = sh.sheet1
+            # 加入表頭
+            worksheet.append_row(["User Message", "Bot Reply", "Timestamp"])
+            logging.info(f"Created new spreadsheet for user {user_id}.")
+            # 將該檔案共用給你的 Google 帳戶 (請替換成你的 Gmail 地址)
+            sh.share('heartflow2021@gmail.com', perm_type='user', role='writer')
+        except Exception as e:
+            logging.error(f"Error creating spreadsheet for user {user_id}: {e}")
+            raise e
+    except Exception as e:
+        logging.error(f"Error opening spreadsheet for user {user_id}: {e}")
+        raise e
     return worksheet
 
-# 修改記錄對話的函式：將資料儲存在對應用戶的 Google Sheet 中
-def save_to_user_sheet(user_id, user_message, bot_reply, time_stamp):
-    worksheet = get_or_create_user_sheet(user_id)
-    worksheet.append_row([user_message, bot_reply, time_stamp])
+# 儲存對話記錄到使用者專屬的 Google Sheet
+def save_to_user_sheet(user_id, user_message, bot_reply, timestamp):
+    try:
+        worksheet = get_or_create_user_sheet(user_id)
+        worksheet.append_row([user_message, bot_reply, timestamp])
+        logging.info(f"Conversation saved for user {user_id}.")
+    except Exception as e:
+        logging.error(f"Error saving conversation to Google Sheets for user {user_id}: {e}")
+        raise e
 
-# 設定 Webhook
+# Webhook 端點
 @app.route("/callback", methods=["POST"])
 def callback():
     body = request.get_data(as_text=True)
     signature = request.headers.get("X-Line-Signature")
-
     if signature is None:
         return "Missing signature", 400
-
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         return "Invalid signature", 400
-
     return "OK", 200
 
 # 處理使用者訊息
@@ -80,6 +89,16 @@ def callback():
 def handle_message(event):
     user_message = event.message.text
     user_id = event.source.user_id
+    logging.info(f"Received message from user {user_id}: {user_message}")
+
+    # 先立即回覆一個暫時訊息，避免 reply token 過期
+    try:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="正在處理中，請稍候...")
+        )
+    except Exception as e:
+        logging.error(f"Error replying immediately: {e}")
 
     # 呼叫 OpenAI API
     try:
@@ -111,13 +130,13 @@ def handle_message(event):
         logging.error(f"Error calling OpenAI API: {e}")
         bot_reply = "很抱歉，目前無法處理您的請求，請稍後再試。"
 
-    # 回應使用者
+    # 用 push_message 發送最終結果
     try:
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=bot_reply))
+        line_bot_api.push_message(user_id, TextSendMessage(text=bot_reply))
     except Exception as e:
-        logging.error(f"Error replying to LINE message: {e}")
+        logging.error(f"Error pushing message to user: {e}")
 
-    # 將對話記錄儲存在該用戶專屬的 Google Sheet 中
+    # 儲存對話記錄到 Google Sheets
     try:
         save_to_user_sheet(user_id, user_message, bot_reply, datetime.now().isoformat())
     except Exception as e:
