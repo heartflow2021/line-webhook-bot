@@ -8,6 +8,7 @@ import requests
 import openai
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from googleapiclient.discovery import build
 from linebot import LineBotApi, WebhookHandler
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
@@ -38,6 +39,12 @@ creds_dict = json.loads(google_credentials_json)
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
+# 建立 Google Drive API 服務物件
+drive_service = build('drive', 'v3', credentials=creds)
+
+# 目標資料夾 ID (請自行設定，這是你想要存放 Spreadsheet 的資料夾ID)
+TARGET_FOLDER_ID = "1SswDib0s4h4LFpdcpYLDzYSiYhzxg4BV"  # 例如： "1AbcDEFghIJklMNoPQRstuVWXyz"
+
 # 取得或建立以用戶 ID 命名的 Spreadsheet
 def get_or_create_user_sheet(user_id):
     try:
@@ -51,8 +58,20 @@ def get_or_create_user_sheet(user_id):
             # 加入表頭
             worksheet.append_row(["User Message", "Bot Reply", "Timestamp"])
             logging.info(f"Created new spreadsheet for user {user_id}.")
-            # 將該檔案共用給你的 Google 帳戶 (請替換成你的 Gmail 地址)
+
+            # 將該檔案共用給你的個人 Google 帳戶（替換成你的 Gmail）
             sh.share('heartflow2021@gmail.com', perm_type='user', role='writer')
+
+            # 移動檔案到指定資料夾
+            file_id = sh.id
+            # 先取得原有的父資料夾，通常為 "root"
+            drive_service.files().update(
+                fileId=file_id,
+                addParents=TARGET_FOLDER_ID,
+                removeParents="root",
+                fields="id, parents"
+            ).execute()
+            logging.info(f"Moved spreadsheet {user_id} to target folder.")
         except Exception as e:
             logging.error(f"Error creating spreadsheet for user {user_id}: {e}")
             raise e
@@ -95,7 +114,7 @@ def handle_message(event):
     try:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="正在處理中，請稍候...")
+            TextSendMessage(text="思考中...")
         )
     except Exception as e:
         logging.error(f"Error replying immediately: {e}")
@@ -128,9 +147,9 @@ def handle_message(event):
         bot_reply = response["choices"][0]["message"]["content"]
     except Exception as e:
         logging.error(f"Error calling OpenAI API: {e}")
-        bot_reply = "很抱歉，目前無法處理您的請求，請稍後再試。"
+        bot_reply = "很抱歉，目前無法回覆你的訊息，請稍後再試。"
 
-    # 用 push_message 發送最終結果
+    # 使用 push_message 發送最終結果
     try:
         line_bot_api.push_message(user_id, TextSendMessage(text=bot_reply))
     except Exception as e:
