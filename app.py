@@ -3,7 +3,7 @@ import json
 import os
 from datetime import datetime
 
-from flask import Flask, request, jsonify
+from flask import Flask, request
 import requests
 import openai
 import gspread
@@ -42,10 +42,10 @@ client = gspread.authorize(creds)
 # 建立 Google Drive API 服務物件
 drive_service = build('drive', 'v3', credentials=creds)
 
-# 目標資料夾 ID (請自行設定，這是你想要存放 Spreadsheet 的資料夾ID)
-TARGET_FOLDER_ID = "1SswDib0s4h4LFpdcpYLDzYSiYhzxg4BV"  # 例如： "1AbcDEFghIJklMNoPQRstuVWXyz"
+# 請將下方 TARGET_FOLDER_ID 替換成你目標資料夾的 ID
+TARGET_FOLDER_ID = "1SswDib0s4h4LFpdcpYLDzYSiYhzxg4BV"  # 例如："1AbcDEFghIJklMNoPQRstuVWXyz"
 
-# 取得或建立以用戶 ID 命名的 Spreadsheet
+# 取得或建立以用戶 ID 命名的 Spreadsheet，並將檔案移到目標資料夾
 def get_or_create_user_sheet(user_id):
     try:
         sh = client.open(user_id)
@@ -55,16 +55,12 @@ def get_or_create_user_sheet(user_id):
         try:
             sh = client.create(user_id)
             worksheet = sh.sheet1
-            # 加入表頭
             worksheet.append_row(["User Message", "Bot Reply", "Timestamp"])
             logging.info(f"Created new spreadsheet for user {user_id}.")
-
-            # 將該檔案共用給你的個人 Google 帳戶（替換成你的 Gmail）
+            # 將該檔案共用給你的 Google 帳戶 (請替換成你的 Gmail 地址)
             sh.share('heartflow2021@gmail.com', perm_type='user', role='writer')
-
             # 移動檔案到指定資料夾
             file_id = sh.id
-            # 先取得原有的父資料夾，通常為 "root"
             drive_service.files().update(
                 fileId=file_id,
                 addParents=TARGET_FOLDER_ID,
@@ -101,6 +97,7 @@ def callback():
         handler.handle(body, signature)
     except InvalidSignatureError:
         return "Invalid signature", 400
+    # 確保能快速回傳 OK 給 LINE
     return "OK", 200
 
 # 處理使用者訊息
@@ -110,16 +107,7 @@ def handle_message(event):
     user_id = event.source.user_id
     logging.info(f"Received message from user {user_id}: {user_message}")
 
-    # 先立即回覆一個暫時訊息，避免 reply token 過期
-    try:
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="思考中...")
-        )
-    except Exception as e:
-        logging.error(f"Error replying immediately: {e}")
-
-    # 呼叫 OpenAI API
+    # 呼叫 OpenAI API（同步處理）
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -147,9 +135,9 @@ def handle_message(event):
         bot_reply = response["choices"][0]["message"]["content"]
     except Exception as e:
         logging.error(f"Error calling OpenAI API: {e}")
-        bot_reply = "很抱歉，目前無法回覆你的訊息，請稍後再試。"
+        bot_reply = "很抱歉，目前無法處理您的請求，請稍後再試。"
 
-    # 使用 push_message 發送最終結果
+    # 用 push_message 回覆使用者（避免使用 reply token）
     try:
         line_bot_api.push_message(user_id, TextSendMessage(text=bot_reply))
     except Exception as e:
